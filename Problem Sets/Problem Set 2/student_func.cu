@@ -244,12 +244,13 @@ void your_gaussian_blur(const uchar4 * const h_inputImageRGBA, uchar4 * const d_
                         const int filterWidth)
 {
   //TODO: Set reasonable block size (i.e., number of threads per block)
-  const dim3 blockSize(1, 1, 1);
+  const dim3 blockSize(filterWidth, filterWidth, 1);
 
   //TODO:
   //Compute correct grid size (i.e., number of blocks per kernel launch)
   //from the image size and and block size.
-  const dim3 gridSize(numCols / blockSize.x, numRows / blockSize.y);
+  const dim3 gridSize((numCols + blockSize.x - 1) / blockSize.x,
+                      (numRows + blockSize.y - 1) / blockSize.y);
 
   //TODO: Launch a kernel for separating the RGBA image into different color channels
   separateChannels<<<gridSize, blockSize>>>(d_inputImageRGBA,
