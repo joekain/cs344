@@ -119,10 +119,13 @@ void max_step(const float* const input,
 
 __global__
 void histogram(const float *const input,
+               int input_size,
                unsigned int *bins, int numBins,
                float min, float range)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= input_size) return;
+
   int bin = (input[i] - min) / range * numBins;
   atomicAdd(&bins[bin], 1);
 }
@@ -201,11 +204,13 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   /*3) generate a histogram of all the values in the logLuminance channel using
        the formula: bin = (lum[i] - lumMin) / lumRange * numBins */
   unsigned int *d_bins;
+  size_t size = numRows * numCols;
   checkCudaErrors(cudaMalloc(&d_bins, sizeof(unsigned int) * numBins));
-  histogram<<<dim3(numRows * numCols), dim3(1)>>>(d_logLuminance,
+  histogram<<<dim3((size + 63) / 64), dim3(64)>>>(d_logLuminance,
+                                                  size,
                                                   d_bins, numBins,
                                                   min_logLum, logLumRange);
-  
+
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
   unsigned int histo0;
   checkCudaErrors(cudaMemcpy(&histo0, d_bins, sizeof(unsigned), cudaMemcpyDeviceToHost));
