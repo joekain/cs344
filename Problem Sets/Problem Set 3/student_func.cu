@@ -254,7 +254,7 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   unsigned int *src = t1;
   unsigned int *dst = t2;
   for (int step = 0; (1 << step) < numBins; step++) {
-    hillis_steele_scan_step<<<dim3(numBins), dim3(1)>>>(src, dst, numBins, step);
+    hillis_steele_scan_step<<<dim3((numBins + 63) / 64), dim3(64)>>>(src, dst, numBins, step);
     src = dst;
     if (src == t1) {
       dst = t2;
@@ -262,7 +262,7 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
       dst = t1;
     }
   }
-  inclusive_scan_to_exclusive_scan<<<dim3(numBins), dim3(1)>>>(src, d_cdf, numBins, 0);
+  inclusive_scan_to_exclusive_scan<<<dim3((numBins + 63) / 64), dim3(64)>>>(src, d_cdf, numBins, 0);
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
 
   cudaFree(t1);
