@@ -81,6 +81,38 @@
 
 #include "utils.h"
 
+__global__
+void min_step(const float* const input,
+              float* output,
+              int input_size)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  float a = input[2 * i];
+
+  if (2 * i + 1 < input_size) {
+    float b = input[2 * i + 1];
+    output[i] = min(a, b);
+  } else {
+    output[i] = a;
+  }
+}
+
+__global__
+void max_step(const float* const input,
+              float* output,
+              int input_size)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  float a = input[2 * i];
+
+  if (2 * i + 1 < input_size) {
+    float b = input[2 * i + 1];
+    output[i] = max(a, b);
+  } else {
+    output[i] = a;
+  }
+}
+
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
                                   unsigned int* const d_cdf,
                                   float &min_logLum,
@@ -92,13 +124,60 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   //TODO
   /*Here are the steps you need to implement
     1) find the minimum and maximum value in the input logLuminance channel
-       store in min_logLum and max_logLum
-    2) subtract them to find the range
+    store in min_logLum and max_logLum */
+
+  float *t1, *t2;
+
+  size_t initial_size = numRows * numCols;
+
+  checkCudaErrors(cudaMalloc(&t1, sizeof(float) * initial_size));
+  checkCudaErrors(cudaMalloc(&t2, sizeof(float) * initial_size));
+
+  const float * src = d_logLuminance;
+  float *dst = t2;
+  size_t input_size;
+  size_t output_size;
+  for (input_size = initial_size; input_size >= 2; input_size = output_size) {
+    output_size = (input_size + 1) / 2;
+    min_step<<<dim3(output_size, 1, 1), dim3(1, 1, 1)>>>(src, dst, input_size);
+    src = dst;
+    if (src == t1) {
+      dst = t2;
+    } else {
+      dst = t1;
+    }
+  }
+  cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+
+  // Result is in src because we exchanged src and tmp after the last kernel launch
+  checkCudaErrors(cudaMemcpy(&min_logLum, src, sizeof(float), cudaMemcpyDeviceToHost));
+  printf("min_logLum = %f\n", min_logLum);
+
+  src = d_logLuminance;
+  dst = t2;
+  for (input_size = initial_size; input_size >= 2; input_size = output_size) {
+    output_size = (input_size + 1) / 2;
+    max_step<<<dim3(output_size, 1, 1), dim3(1, 1, 1)>>>(src, dst, input_size);
+    src = dst;
+    if (src == t1) {
+      dst = t2;
+    } else {
+      dst = t1;
+    }
+  }
+  cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+  // Result is in src because we exchanged src and tmp after the last kernel launch
+  checkCudaErrors(cudaMemcpy(&max_logLum, src, sizeof(float), cudaMemcpyDeviceToHost));
+  printf("max_logLum = %f\n", max_logLum);
+
+  /*2) subtract them to find the range
     3) generate a histogram of all the values in the logLuminance channel using
        the formula: bin = (lum[i] - lumMin) / lumRange * numBins
     4) Perform an exclusive scan (prefix sum) on the histogram to get
        the cumulative distribution of luminance values (this should go in the
        incoming d_cdf pointer which already has been allocated for you)       */
+  cudaFree(t1);
+  cudaFree(t2);
 
 
 }
