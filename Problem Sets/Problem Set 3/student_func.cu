@@ -179,14 +179,17 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
                                   const size_t numCols,
                                   const size_t numBins)
 {
-  //TODO
   /*Here are the steps you need to implement
     1) find the minimum and maximum value in the input logLuminance channel
     store in min_logLum and max_logLum */
   reduce_min_max(d_logLuminance, min_logLum, max_logLum, numRows, numCols);
 
-  /*2) subtract them to find the range
-    3) generate a histogram of all the values in the logLuminance channel using
+  /*2) subtract them to find the range */
+  float logLumRange = max_logLum - min_logLum;
+
+
+  //TODO
+  /*3) generate a histogram of all the values in the logLuminance channel using
        the formula: bin = (lum[i] - lumMin) / lumRange * numBins
     4) Perform an exclusive scan (prefix sum) on the histogram to get
        the cumulative distribution of luminance values (this should go in the
