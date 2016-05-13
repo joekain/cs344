@@ -121,13 +121,48 @@ __global__
 void histogram(const float *const input,
                int input_size,
                unsigned int *bins, int numBins,
-               float min, float range)
+               float minLum, float range)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= input_size) return;
 
-  int bin = (input[i] - min) / range * numBins;
+  int bin = (input[i] - minLum) / range * numBins;
+  bin = min(bin, numBins);
   atomicAdd(&bins[bin], 1);
+}
+
+__global__
+void hillis_steele_scan_step(const unsigned int *const input,
+                             unsigned int *output,
+                             int size,
+                             int step)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i > size) return;
+
+  unsigned int a = input[i];
+  int j = i - (1 << step);
+  if (j < 0) {
+    output[i] = a;
+  } else {
+    output[i] = a + input[j];
+  }
+}
+
+__global__
+void inclusive_scan_to_exclusive_scan(const unsigned int *const input,
+                                      unsigned int *output,
+                                      int size,
+                                      unsigned int identity)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i > size) return;
+
+  if (i == 0) {
+    output[i] = identity;
+  } else {
+    output[i] = input[i - 1];
+  }
 }
 
 void reduce_min_max(const float *const d_logLuminance,
@@ -161,7 +196,6 @@ void reduce_min_max(const float *const d_logLuminance,
 
   // Result is in src because we exchanged src and tmp after the last kernel launch
   checkCudaErrors(cudaMemcpy(&min_logLum, src, sizeof(float), cudaMemcpyDeviceToHost));
-  printf("min_logLum = %f\n", min_logLum);
 
   src = d_logLuminance;
   dst = t2;
@@ -178,7 +212,6 @@ void reduce_min_max(const float *const d_logLuminance,
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
   // Result is in src because we exchanged src and tmp after the last kernel launch
   checkCudaErrors(cudaMemcpy(&max_logLum, src, sizeof(float), cudaMemcpyDeviceToHost));
-  printf("max_logLum = %f\n", max_logLum);
 
   cudaFree(t1);
   cudaFree(t2);
@@ -203,22 +236,35 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
 
   /*3) generate a histogram of all the values in the logLuminance channel using
        the formula: bin = (lum[i] - lumMin) / lumRange * numBins */
-  unsigned int *d_bins;
+  unsigned int *t1, *t2;
+  checkCudaErrors(cudaMalloc(&t1, sizeof(unsigned int) * numBins));
+  checkCudaErrors(cudaMalloc(&t2, sizeof(unsigned int) * numBins));
+  cudaMemset(t1, 0, sizeof(unsigned int) * numBins);
   size_t size = numRows * numCols;
-  checkCudaErrors(cudaMalloc(&d_bins, sizeof(unsigned int) * numBins));
   histogram<<<dim3((size + 63) / 64), dim3(64)>>>(d_logLuminance,
                                                   size,
-                                                  d_bins, numBins,
+                                                  t1, numBins,
                                                   min_logLum, logLumRange);
 
   cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
-  unsigned int histo0;
-  checkCudaErrors(cudaMemcpy(&histo0, d_bins, sizeof(unsigned), cudaMemcpyDeviceToHost));
-  printf("histo[0] = %d\n", histo0);
 
-  //TODO
   /*4) Perform an exclusive scan (prefix sum) on the histogram to get
        the cumulative distribution of luminance values (this should go in the
        incoming d_cdf pointer which already has been allocated for you)       */
-  cudaFree(d_bins);
+  unsigned int *src = t1;
+  unsigned int *dst = t2;
+  for (int step = 0; (1 << step) < numBins; step++) {
+    hillis_steele_scan_step<<<dim3(numBins), dim3(1)>>>(src, dst, numBins, step);
+    src = dst;
+    if (src == t1) {
+      dst = t2;
+    } else {
+      dst = t1;
+    }
+  }
+  inclusive_scan_to_exclusive_scan<<<dim3(numBins), dim3(1)>>>(src, d_cdf, numBins, 0);
+  cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
+
+  cudaFree(t1);
+  cudaFree(t2);
 }
