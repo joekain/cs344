@@ -87,6 +87,8 @@ void min_step(const float* const input,
               int input_size)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (2 * i >= input_size) return;
+
   float a = input[2 * i];
 
   if (2 * i + 1 < input_size) {
@@ -94,7 +96,7 @@ void min_step(const float* const input,
     output[i] = min(a, b);
   } else {
     output[i] = a;
-  }
+    }
 }
 
 __global__
@@ -103,6 +105,8 @@ void max_step(const float* const input,
               int input_size)
 {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (2 * i >= input_size) return;
+
   float a = input[2 * i];
 
   if (2 * i + 1 < input_size) {
@@ -139,7 +143,7 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   size_t output_size;
   for (input_size = initial_size; input_size >= 2; input_size = output_size) {
     output_size = (input_size + 1) / 2;
-    min_step<<<dim3(output_size, 1, 1), dim3(1, 1, 1)>>>(src, dst, input_size);
+    min_step<<<dim3((output_size + 63) / 64), dim3(64)>>>(src, dst, input_size);
     src = dst;
     if (src == t1) {
       dst = t2;
@@ -157,7 +161,7 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   dst = t2;
   for (input_size = initial_size; input_size >= 2; input_size = output_size) {
     output_size = (input_size + 1) / 2;
-    max_step<<<dim3(output_size, 1, 1), dim3(1, 1, 1)>>>(src, dst, input_size);
+    max_step<<<dim3((output_size + 63) / 64), dim3(64)>>>(src, dst, input_size);
     src = dst;
     if (src == t1) {
       dst = t2;
