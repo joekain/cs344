@@ -8,6 +8,7 @@ void referenceCalculation(const float* const h_logLuminance, unsigned int* const
   logLumMin = h_logLuminance[0];
   logLumMax = h_logLuminance[0];
 
+
   //Step 1
   //first we find the minimum and maximum across the entire image
   for (size_t i = 1; i < numCols * numRows; ++i) {
@@ -38,6 +39,5 @@ void referenceCalculation(const float* const h_logLuminance, unsigned int* const
   for (size_t i = 1; i < numBins; ++i) {
     h_cdf[i] = h_cdf[i - 1] + histo[i - 1];
   }
-
   delete[] histo;
 }
